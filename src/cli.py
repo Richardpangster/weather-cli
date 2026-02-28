@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Weather CLI - 命令行天气查询工具
-支持查询当前天气、天气预报，以及管理配置文件。
+支持查询当前天气、天气预报，以及管理配置文件和日志。
 """
 import argparse
 import sys
@@ -16,6 +15,9 @@ from config import (
     set_config,
     show_config,
 )
+
+# 导入日志模块
+from logger import setup_logger, LOG_FILE
 
 # 导入天气模块
 from weather import (
@@ -47,22 +49,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser = argparse.ArgumentParser(
         prog="cli.py",
-        description="天气查询工具 - 查询全球城市当前天气和预报",
+        description="天气查询工具",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-示例:
-  python cli.py Beijing              查询北京当前天气
-  python cli.py Beijing -f           查询北京天气预报
-  python cli.py Beijing --json       以 JSON 格式输出
-  python cli.py --config default_city=Beijing   设置默认城市
-        """,
     )
 
     parser.add_argument(
         "city",
         nargs="?",
         default=default_city,
-        help="要查询的城市名称（如：Beijing, Shanghai）",
+        help="要查询的城市名称",
     )
     parser.add_argument(
         "-f", "--forecast",
@@ -74,10 +69,25 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="以 JSON 格式输出",
     )
+    
+    # 日志级别控制
+    log_group = parser.add_mutually_exclusive_group()
+    log_group.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        help="显示详细日志 (DEBUG级别)",
+    )
+    log_group.add_argument(
+        "-q", "--quiet",
+        action="store_true",
+        help="只显示警告和错误",
+    )
+    
+    # 配置命令
     parser.add_argument(
         "--config",
         metavar="KEY=VALUE",
-        help="设置配置项（如：default_city=Beijing）",
+        help="设置配置项",
     )
     parser.add_argument(
         "--config-show",
@@ -137,19 +147,28 @@ def run_weather_query(args: argparse.Namespace) -> int:
     """
     city = args.city
     if not city:
-        print("错误: 请指定城市名称，或使用 --config 设置默认城市")
+        print("错误: 请指定城市名称")
         return 1
+
+    # 获取日志记录器
+    logger = setup_logger()
+    logger.info(f"查询城市: {city}")
 
     try:
         # 获取城市坐标
+        logger.debug(f"正在获取 {city} 的坐标")
         city_info = get_coordinates(city)
         lat = city_info["latitude"]
         lon = city_info["longitude"]
         city_name = city_info["name"]
         country = city_info["country"]
+        
+        logger.debug(f"坐标: {lat}, {lon}")
 
         # 获取当前天气
+        logger.debug("正在获取天气数据")
         current = get_weather(lat, lon)
+        logger.debug(f"天气数据: {current}")
 
         # 根据参数输出
         if args.json:
@@ -166,13 +185,16 @@ def run_weather_query(args: argparse.Namespace) -> int:
                 ))
             else:
                 print(format_text_current(city_name, country, lat, lon, current))
-
+        
+        logger.info(f"查询完成: {city_name}")
         return 0
 
     except ValueError as e:
+        logger.error(f"查询失败: {e}")
         print(f"错误: {e}")
         return 1
     except Exception as e:
+        logger.exception(f"请求失败: {e}")
         print(f"请求失败: {e}")
         return 1
 
@@ -186,6 +208,14 @@ def main() -> int:
     """
     parser = build_parser()
     args = parser.parse_args()
+
+    # 设置日志级别
+    if args.verbose:
+        setup_logger(level=10)  # DEBUG
+    elif args.quiet:
+        setup_logger(level=30)  # WARNING
+    else:
+        setup_logger(level=20)  # INFO
 
     # 处理配置命令
     config_result = run_config_command(args)
