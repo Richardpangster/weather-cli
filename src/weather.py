@@ -4,15 +4,15 @@
 import requests
 
 
-def get_coordinates(city: str) -> tuple[float, float]:
+def get_coordinates(city: str) -> dict:
     """
-    获取城市经纬度
+    获取城市信息（坐标、国家等）
 
     Args:
         city: 城市名称
 
     Returns:
-        (latitude, longitude) 元组
+        包含 latitude, longitude, country, name 的字典
 
     Raises:
         ValueError: 找不到城市时抛出
@@ -26,19 +26,24 @@ def get_coordinates(city: str) -> tuple[float, float]:
         raise ValueError(f"找不到城市: {city}")
 
     result = data["results"][0]
-    return result["latitude"], result["longitude"]
+    return {
+        "latitude": result["latitude"],
+        "longitude": result["longitude"],
+        "country": result.get("country", "未知"),
+        "name": result.get("name", city),
+    }
 
 
 def get_weather(lat: float, lon: float) -> dict:
     """
-    获取天气数据
+    获取当前天气数据
 
     Args:
         lat: 纬度
         lon: 经度
 
     Returns:
-        天气数据字典，包含 temperature 和 weather_code
+        天气数据字典，包含 temperature, weather_code, time
     """
     url = (
         f"https://api.open-meteo.com/v1/forecast?"
@@ -53,7 +58,43 @@ def get_weather(lat: float, lon: float) -> dict:
     return {
         "temperature": current.get("temperature_2m"),
         "weather_code": current.get("weather_code"),
+        "time": current.get("time"),
     }
+
+
+def get_forecast(lat: float, lon: float, days: int = 3) -> list[dict]:
+    """
+    获取未来天气预报
+
+    Args:
+        lat: 纬度
+        lon: 经度
+        days: 预报天数（默认 3 天）
+
+    Returns:
+        预报数据列表，每项包含 date, max_temp, min_temp, weather_code
+    """
+    url = (
+        f"https://api.open-meteo.com/v1/forecast?"
+        f"latitude={lat}&longitude={lon}&"
+        f"daily=temperature_2m_max,temperature_2m_min,weather_code&"
+        f"forecast_days={days}"
+    )
+    response = requests.get(url, timeout=30)
+    response.raise_for_status()
+    data = response.json()
+
+    daily = data.get("daily", {})
+    forecasts = []
+    for i in range(len(daily.get("time", []))):
+        forecasts.append({
+            "date": daily["time"][i],
+            "max_temp": daily["temperature_2m_max"][i],
+            "min_temp": daily["temperature_2m_min"][i],
+            "weather_code": daily["weather_code"][i],
+        })
+
+    return forecasts
 
 
 def parse_weather_code(code: int) -> str:
